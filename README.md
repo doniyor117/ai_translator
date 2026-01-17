@@ -10,6 +10,8 @@
 
 ## ✨ Features
 
+![Alt Text](images/Screenshot_20260117_165531.png)
+
 ### 🧠 Dual-Model Intelligence
 We use the right brain for the job:
 *   **For Vocabulary (1-4 words)**: Uses **Llama 3.1 70B (via Groq)** to provide rich, dictionary-style definitions with visual emojis, pronunciation guides, and usage examples.
