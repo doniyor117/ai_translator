@@ -1,4 +1,4 @@
-# 🌐 AI Translator
+# 🌐 LumenAI Translate
 
 > **More than just words.** A smart, context-aware translator that understands nuance, slang, and multiple meanings.
 
