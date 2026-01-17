@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { LanguageSelector } from './LanguageSelector';
-import { saveTranslation } from '@/lib/history';
+import { saveTranslation, TranslationEntry } from '@/lib/history';
 
 const MAX_CHARS = 5000;
 
 interface TranslatorPanelProps {
     onTranslationComplete?: () => void;
+    restoredEntry?: TranslationEntry | null;
 }
 
-export function TranslatorPanel({ onTranslationComplete }: TranslatorPanelProps) {
+export function TranslatorPanel({ onTranslationComplete, restoredEntry }: TranslatorPanelProps) {
     const [sourceText, setSourceText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
     const [sourceLang, setSourceLang] = useState('auto');
@@ -22,6 +23,23 @@ export function TranslatorPanel({ onTranslationComplete }: TranslatorPanelProps)
     const [modelUsed, setModelUsed] = useState('');
     const [outputMode, setOutputMode] = useState<'vocabulary' | 'sentence'>('sentence');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Restore entry from history
+    useEffect(() => {
+        if (restoredEntry) {
+            setSourceText(restoredEntry.sourceText);
+            setTranslatedText(restoredEntry.translatedText);
+            setSourceLang(restoredEntry.sourceLang);
+            setTargetLang(restoredEntry.targetLang);
+            setContext(restoredEntry.context || '');
+            setShowContext(!!restoredEntry.context);
+            setError('');
+            setModelUsed('From History');
+            // Detect output mode from word count
+            const wordCount = restoredEntry.sourceText.trim().split(/\s+/).filter(Boolean).length;
+            setOutputMode(wordCount <= 4 ? 'vocabulary' : 'sentence');
+        }
+    }, [restoredEntry]);
 
     const charCount = sourceText.length;
     const isOverLimit = charCount > MAX_CHARS;
@@ -128,8 +146,8 @@ export function TranslatorPanel({ onTranslationComplete }: TranslatorPanelProps)
                     onClick={handleSwapLanguages}
                     disabled={sourceLang === 'auto'}
                     className={`p-2.5 rounded-lg border border-[var(--border)] transition-all mb-0.5 ${sourceLang === 'auto'
-                            ? 'opacity-40 cursor-not-allowed'
-                            : 'hover:bg-[var(--surface-hover)] hover:border-[var(--primary)]'
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'hover:bg-[var(--surface-hover)] hover:border-[var(--primary)]'
                         }`}
                     title="Swap languages"
                     aria-label="Swap languages"
@@ -197,8 +215,8 @@ export function TranslatorPanel({ onTranslationComplete }: TranslatorPanelProps)
                             onClick={handleTranslate}
                             disabled={!sourceText.trim() || isOverLimit || isLoading}
                             className={`px-5 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${!sourceText.trim() || isOverLimit || isLoading
-                                    ? 'bg-[var(--surface)] text-[var(--text-muted)] cursor-not-allowed'
-                                    : 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] shadow-lg shadow-blue-500/25'
+                                ? 'bg-[var(--surface)] text-[var(--text-muted)] cursor-not-allowed'
+                                : 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] shadow-lg shadow-blue-500/25'
                                 }`}
                         >
                             {isLoading ? (

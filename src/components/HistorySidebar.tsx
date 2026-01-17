@@ -11,12 +11,57 @@ interface HistorySidebarProps {
     refreshTrigger?: number;
 }
 
+interface BeforeInstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 export function HistorySidebar({ isOpen, onClose, onSelect, refreshTrigger }: HistorySidebarProps) {
     const [history, setHistory] = useState<TranslationEntry[]>([]);
+    const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+    const [isInstalled, setIsInstalled] = useState(false);
 
     useEffect(() => {
         setHistory(getHistory());
     }, [refreshTrigger]);
+
+    // Listen for PWA install prompt
+    useEffect(() => {
+        const handleBeforeInstall = (e: Event) => {
+            e.preventDefault();
+            setDeferredPrompt(e as BeforeInstallPromptEvent);
+        };
+
+        const handleAppInstalled = () => {
+            setIsInstalled(true);
+            setDeferredPrompt(null);
+        };
+
+        // Check if already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            setIsInstalled(true);
+        }
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+        window.addEventListener('appinstalled', handleAppInstalled);
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+            window.removeEventListener('appinstalled', handleAppInstalled);
+        };
+    }, []);
+
+    const handleInstall = async () => {
+        if (!deferredPrompt) return;
+
+        await deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+
+        if (outcome === 'accepted') {
+            setIsInstalled(true);
+        }
+        setDeferredPrompt(null);
+    };
 
     const handleDelete = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -43,7 +88,7 @@ export function HistorySidebar({ isOpen, onClose, onSelect, refreshTrigger }: Hi
 
             {/* Sidebar */}
             <div
-                className={`fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-[var(--background)] border-l border-[var(--border)] shadow-2xl z-50 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+                className={`fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-[var(--background)] border-l border-[var(--border)] shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'
                     }`}
             >
                 <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
@@ -69,7 +114,7 @@ export function HistorySidebar({ isOpen, onClose, onSelect, refreshTrigger }: Hi
                     </div>
                 </div>
 
-                <div className="overflow-y-auto h-[calc(100%-65px)]">
+                <div className="flex-1 overflow-y-auto">
                     {history.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] px-4">
                             <svg className="w-12 h-12 mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -111,6 +156,39 @@ export function HistorySidebar({ isOpen, onClose, onSelect, refreshTrigger }: Hi
                         </div>
                     )}
                 </div>
+
+                {/* PWA Install Button - at bottom */}
+                {!isInstalled && (
+                    <div className="p-4 border-t border-[var(--border)]">
+                        <button
+                            onClick={handleInstall}
+                            disabled={!deferredPrompt}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${deferredPrompt
+                                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg'
+                                : 'bg-[var(--surface)] text-[var(--text-muted)] cursor-not-allowed'
+                                }`}
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            {deferredPrompt ? 'Install App' : 'Open in browser to install'}
+                        </button>
+                        <p className="text-xs text-center text-[var(--text-muted)] mt-2">
+                            Install LumenAI on your device
+                        </p>
+                    </div>
+                )}
+
+                {isInstalled && (
+                    <div className="p-4 border-t border-[var(--border)]">
+                        <div className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-green-500/10 text-green-600">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="font-medium">App Installed</span>
+                        </div>
+                    </div>
+                )}
             </div>
         </>
     );

@@ -59,7 +59,7 @@ export default function Home() {
             <div className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full">
                 <TranslatorPanel
                     onTranslationComplete={handleTranslationComplete}
-                    key={restoredEntry?.id}
+                    restoredEntry={restoredEntry}
                 />
             </div>
 
