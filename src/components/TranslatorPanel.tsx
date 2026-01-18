@@ -11,6 +11,23 @@ interface TranslatorPanelProps {
     restoredEntry?: TranslationEntry | null;
 }
 
+// Helper to get browser voice
+const getVoice = (langCode: string, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null => {
+    // 1. Exact match (e.g., 'de-DE' for 'de')
+    let voice = voices.find(v => v.lang === langCode || v.lang.replace('_', '-').startsWith(langCode + '-'));
+    if (voice) return voice;
+
+    // 2. Base language match (e.g., 'de') and prefer Google/Microsoft voices for quality
+    const baseMatches = voices.filter(v => v.lang.startsWith(langCode));
+    if (baseMatches.length > 0) {
+        // Prefer Google or Microsoft voices as they are usually higher quality
+        const premium = baseMatches.find(v => v.name.includes('Google') || v.name.includes('Microsoft'));
+        return premium || baseMatches[0];
+    }
+
+    return null;
+};
+
 export function TranslatorPanel({ onTranslationComplete, restoredEntry }: TranslatorPanelProps) {
     const [sourceText, setSourceText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
@@ -22,7 +39,31 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
     const [error, setError] = useState('');
     const [modelUsed, setModelUsed] = useState('');
     const [outputMode, setOutputMode] = useState<'vocabulary' | 'sentence'>('sentence');
+    const [isListening, setIsListening] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const recognitionRef = useRef<any>(null); // Use any for SpeechRecognition to avoid TS issues
+
+    // Load available voices
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const loadVoices = () => {
+            const available = window.speechSynthesis.getVoices();
+            if (available.length > 0) {
+                setVoices(available);
+            }
+        };
+
+        loadVoices();
+
+        // Chrome loads voices asynchronously
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+    }, []);
 
     // Restore entry from history
     useEffect(() => {
@@ -35,11 +76,37 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
             setShowContext(!!restoredEntry.context);
             setError('');
             setModelUsed('From History');
-            // Detect output mode from word count
             const wordCount = restoredEntry.sourceText.trim().split(/\s+/).filter(Boolean).length;
             setOutputMode(wordCount <= 4 ? 'vocabulary' : 'sentence');
         }
     }, [restoredEntry]);
+
+    // Initialize Speech Recognition
+    useEffect(() => {
+        if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
+            const SpeechRecognition = (window as any).webkitSpeechRecognition;
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = false;
+            recognitionRef.current.interimResults = false;
+
+            recognitionRef.current.onresult = (event: any) => {
+                const transcript = event.results[0][0].transcript;
+                setSourceText(transcript);
+                setIsListening(false);
+                // Optional: Auto-translate after speech
+                // handleTranslate(); 
+            };
+
+            recognitionRef.current.onerror = (event: any) => {
+                console.error('Speech recognition error', event.error);
+                setIsListening(false);
+            };
+
+            recognitionRef.current.onend = () => {
+                setIsListening(false);
+            };
+        }
+    }, []);
 
     const charCount = sourceText.length;
     const isOverLimit = charCount > MAX_CHARS;
@@ -105,7 +172,6 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
         try {
             await navigator.clipboard.writeText(translatedText);
         } catch {
-            // Fallback for older browsers
             const textarea = document.createElement('textarea');
             textarea.value = translatedText;
             document.body.appendChild(textarea);
@@ -129,6 +195,120 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
             handleTranslate();
         }
     };
+
+    // --- Audio Handlers ---
+
+    const toggleListening = () => {
+        if (!recognitionRef.current) {
+            alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+            return;
+        }
+
+        if (isListening) {
+            recognitionRef.current.stop();
+        } else {
+            // Set language if known
+            if (sourceLang !== 'auto') {
+                recognitionRef.current.lang = sourceLang;
+            }
+            recognitionRef.current.start();
+            setIsListening(true);
+        }
+    };
+
+    const handleSpeak = () => {
+        if (!translatedText) return;
+
+        // Stop any current speech
+        window.speechSynthesis.cancel();
+
+        if (isSpeaking) {
+            setIsSpeaking(false);
+            return;
+        }
+
+        let textToRead = translatedText;
+
+        // SMART PARSING for Vocabulary Mode
+        // We want to extract JUST the headword/corrected word to pronounce
+        // Format: 
+        // Detected Language: ...
+        // [Corrected Word] [pronunciation]
+        if (outputMode === 'vocabulary') {
+            const lines = translatedText.split('\n');
+            // Try to find the line with the word (usually the one after Detected Language)
+            // Or look for the line that has [pronunciation] brackets
+            const wordLine = lines.find(line => line.includes('[') && line.includes(']') && !line.startsWith('Detected Language') && !line.startsWith('1.'));
+
+            if (wordLine) {
+                // Extract word before the first bracket
+                const match = wordLine.match(/^(.*?)\s*\[/);
+                if (match && match[1]) {
+                    textToRead = match[1].trim();
+                } else {
+                    // Fallback: take the whole line but remove brackets
+                    textToRead = wordLine.replace(/\[.*?\]/g, '').trim();
+                }
+            } else {
+                // Fallback 2: Just take the second non-empty line
+                const nonEmptyLines = lines.filter(l => l.trim());
+                if (nonEmptyLines.length >= 2) {
+                    textToRead = nonEmptyLines[1].trim();
+                }
+            }
+        }
+
+        const utterance = new SpeechSynthesisUtterance(textToRead);
+
+        // Get FRESH voices directly from API (state might be stale)
+        const freshVoices = window.speechSynthesis.getVoices();
+        console.log(`Available voices: ${freshVoices.length}`, freshVoices.map(v => `${v.name} (${v.lang})`));
+
+        // Find the best matching voice
+        let selectedVoice: SpeechSynthesisVoice | null = null;
+
+        // 1. Try to find a voice that exactly matches or starts with targetLang
+        const matchingVoices = freshVoices.filter(v =>
+            v.lang === targetLang ||
+            v.lang.startsWith(targetLang + '-') ||
+            v.lang.startsWith(targetLang + '_')
+        );
+
+        if (matchingVoices.length > 0) {
+            // Prefer Google or Microsoft voices (higher quality)
+            selectedVoice = matchingVoices.find(v =>
+                v.name.includes('Google') || v.name.includes('Microsoft')
+            ) || matchingVoices[0];
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            utterance.lang = selectedVoice.lang;
+            console.log(`✅ Using voice: ${selectedVoice.name} (${selectedVoice.lang})`);
+        } else {
+            // No matching voice found - still set the lang, browser may handle it
+            utterance.lang = targetLang;
+            console.warn(`⚠️ No voice found for "${targetLang}". Browser will use default.`);
+        }
+
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = (e) => {
+            console.error('TTS Error:', e);
+            setIsSpeaking(false);
+        };
+
+        setIsSpeaking(true);
+        window.speechSynthesis.speak(utterance);
+    };
+
+    // Ensure speech stops on unmount
+    useEffect(() => {
+        return () => {
+            if (typeof window !== 'undefined') {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, []);
 
     return (
         <div className="flex flex-col h-full">
@@ -181,17 +361,34 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
                             className="w-full h-full p-4 pb-12 bg-transparent resize-none focus:outline-none text-lg"
                             autoFocus
                         />
-                        {sourceText && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                            {/* Mic Button */}
                             <button
-                                onClick={handleClear}
-                                className="absolute top-3 right-3 p-1.5 hover:bg-[var(--surface-hover)] rounded-lg transition-colors text-[var(--text-muted)]"
-                                aria-label="Clear text"
+                                onClick={toggleListening}
+                                className={`p-2 rounded-full transition-all ${isListening
+                                    ? 'bg-red-500 text-white animate-pulse'
+                                    : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]'
+                                    }`}
+                                title="Speech to Text"
+                                aria-label="Use voice input"
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                 </svg>
                             </button>
-                        )}
+
+                            {sourceText && (
+                                <button
+                                    onClick={handleClear}
+                                    className="p-1.5 hover:bg-[var(--surface-hover)] rounded-lg transition-colors text-[var(--text-muted)]"
+                                    aria-label="Clear text"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--border)] bg-[var(--background)]/50">
@@ -291,15 +488,33 @@ export function TranslatorPanel({ onTranslationComplete, restoredEntry }: Transl
                         </div>
 
                         {translatedText && (
-                            <button
-                                onClick={handleCopy}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] rounded-lg transition-colors"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                                Copy
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {/* Speaker Button */}
+                                <button
+                                    onClick={handleSpeak}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${isSpeaking
+                                        ? 'text-[var(--primary)] bg-[var(--surface-hover)]'
+                                        : 'text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]'
+                                        }`}
+                                    title="Listen"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                    </svg>
+                                    {isSpeaking ? 'Playing...' : 'Listen'}
+                                </button>
+
+                                <button
+                                    onClick={handleCopy}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] rounded-lg transition-colors"
+                                    title="Copy"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                    Copy
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>

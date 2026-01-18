@@ -85,6 +85,8 @@ function buildVocabularyPrompt(
 ): string {
     const targetName = LANG_NAMES[targetLang] || targetLang;
     const targetFlag = FLAGS[targetLang] || '🌐';
+    const sourceName = LANG_NAMES[sourceLang] || sourceLang;
+    const isAuto = sourceLang === 'auto';
 
     return `You are an expert linguist translator. Translate a word/phrase to ${targetName}.
 
@@ -107,6 +109,7 @@ Detected Language: [Full Language Name] [flag emoji from this list: 🇬🇧🇺
 📝 Note: [Any special tips, cultural notes, or grammar tips - write in ${targetName}]
 
 IMPORTANT RULES:
+${!isAuto ? `- CRITICAL: The user has EXPLICITLY set the source language to ${sourceName}. You MUST interpret the input as ${sourceName}, even if it looks like another language (e.g. 'Gift' in German = Poison, not Present).` : ''}
 - Use visual emojis that represent the meaning (🏦 for bank/money, 🌊 for river bank, 👋 for hello, 📚 for book, etc.)
 - Put pronunciation in [brackets] right after the word
 - Write ALL explanations in ${targetName} language! EXAMPLE LANG IS IN THE LANG OF THE WORD SEARCHED
@@ -131,6 +134,8 @@ function buildSentencePrompt(
 ): string {
     const targetName = LANG_NAMES[targetLang] || targetLang;
     const targetFlag = FLAGS[targetLang] || '🌐';
+    const sourceName = LANG_NAMES[sourceLang] || sourceLang;
+    const isAuto = sourceLang === 'auto';
 
     return `You are an expert translator. Translate text to ${targetName}.
 
@@ -141,6 +146,7 @@ Detected Language: [Language Name] [flag emoji]
 [Your accurate, natural translation in ${targetName}]
 
 RULES:
+${!isAuto ? `- CRITICAL: The user has EXPLICITLY set the source language to ${sourceName}. Treat the input as ${sourceName}, even if it looks like another language.` : ''}
 - Provide ONLY the translation after the detected language line
 - Use natural, native-sounding ${targetName}
 - Preserve the original meaning, tone, and style
@@ -297,6 +303,8 @@ export async function translate(
  */
 export function getModelDisplayName(model: string): string {
     const names: Record<string, string> = {
+        'openai/gpt-oss-120b': 'GPT-OSS 120B',
+        'openai/gpt-oss-20b': 'GPT-OSS 20B',
         'llama-3.1-70b-versatile': 'Llama 3.1 70B',
         'qwen-qwq-32b': 'Qwen QwQ 32B',
         'llama-3.1-8b-instant': 'Llama 3.1 8B',

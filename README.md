@@ -18,11 +18,22 @@ We use the right brain for the job:
 *   **For Vocabulary (1-4 words)**: Uses **Llama 3.1 70B (via Groq)** to provide rich, dictionary-style definitions with visual emojis, pronunciation guides, and usage examples.
 *   **For Sentences (5+ words)**: Automatically switches to **Gemini 1.5 Flash** for rapid, fluent, and accurate full-text translation.
 
+### 🎧 Audio & Voice Features
+*   **Speech-to-Text (STT)**: Speak directly into the app using Chrome/Edge's native speech recognition.
+*   **Smart Text-to-Speech (TTS)**:
+    *   **Native Accent Force**: Automatically detects and forces the *correct* regional voice (e.g., German voice for German text) to fix accent issues.
+    *   **Intelligent Reading**: For vocabulary words, it reads *only* the headword (e.g., "Überraschung") and ignores the grammar metadata.
+    *   **Voice Quality**: Prioritizes high-quality Google/Microsoft neural voices if available.
+
+### 🎯 Precision Logic
+*   **Strict Language Enforcement**: Prevents "false friend" errors. If you select **German** but type "Gift" (which exists in English too), it forces the AI to treat it as German ("Poison") instead of guessing English ("Present").
+
 ### 🚀 Key Capabilities
 *   **📚 Smart Dictionary**: Don't just get a word; get the *meaning*. See synonyms, parts of speech, and example sentences.
 *   **🎭 Context-Aware**: Add optional context (e.g., "formal email", "slang", "medical") to get the perfect tone.
 *   **📱 Installable App (PWA)**: Add to your mobile home screen and use it like a native app.
 *   **⚡ Blazing Fast**: Powered by Groq's LPU inference engine for instant vocabulary lookups.
+*   **🎤 Audio Support**: Speech-to-Text inputs and Text-to-Speech output with smart accent detection.
 *   **🎨 Beautiful UI**: Glassmorphism design with full Dark Mode support and smooth animations.
 *   **💾 History**: Automatically saves your translations locally so you never lose them.
 
